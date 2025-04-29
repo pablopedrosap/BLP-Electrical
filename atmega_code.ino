@@ -13,7 +13,7 @@ const int LOADCELL_SCK_PIN = 3;
 
 
 HX711 scale;
-float weight = scale.get_units(1);
+float weight = 0;
 
 // Pin used to trigger a coil
 int coil = 4; 
@@ -111,7 +111,7 @@ void setup() {
 
    //This probably should be changed to 115200 but then the pi
    //should also be changed
-    Serial.begin(9600);
+    Serial.begin(115200);
 
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
     // Tare to zero the scale (remove any load)
@@ -144,7 +144,10 @@ void loop() {
         if (c == '4') digitalWrite(v4, HIGH);
         if (c == '$') digitalWrite(v4, LOW);
 
-        if(c == '10') ReadLoadCell();
+        if(c == '&') {
+            weight = ReadLoadCell();
+            Serial.println(weight);
+        }
 
         if (c == '9') {
             unsigned long startMicros = micros();
@@ -236,6 +239,13 @@ void dry_test() {
     }
 }
 
+// Load Cell Function
+float ReadLoadCell() {
+    weight = scale.get_units(1); // Read 1 sample
+    return weight;
+}
+
+
 // ------------------- PRESSURE SENSOR FUNCTIONS -------------------
 
 // Read pressure from OPD (pt1)
@@ -250,15 +260,7 @@ float ReadOPD02() {
     return pres_sum2 / pres_samples;
 }
 
-float ReadLoadCell() {
-    weight = scale.get_units(1); // Average of 1 readings
-    Serial.print("Weight: ");
-    Serial.print(weight, 3);  // Show three decimal places
-    Serial.println(" grams");
-    delay(0.001);
 
-    return weight;
-}
 
 float ReadOPD01() {
     pres_sum1 = 0;
