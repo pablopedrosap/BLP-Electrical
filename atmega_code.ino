@@ -4,27 +4,30 @@ int v2 = 6;
 int v3 = 14;
 int v4 = 21;
 
+// spark
+int s1 = 4;
+
 //load cell
 #include "HX711.h"
+#include "digitalWriteFast.h"
 
 // HX711 circuit wiring
 const int LOADCELL_DOUT_PIN = 2;
 const int LOADCELL_SCK_PIN = 3;
 
+// ematch
+int EMATCH = A0;
 
 HX711 scale;
 float weight = 0;
 
-// Pin used to trigger a coil
-int coil = 4; 
 
 // Analog input pins for pressure transducers
 int OPD02  = A7;
-int pt2  = A8;
 int OPD01  = A10;
-int pt4  = A5;
 int EPD01  = A2;
 int FPD01 = A14;
+int FPD02 = A8; // Fix port num
 
 // Raw analog values
 int d1, d2, d3, d4, d5;
@@ -66,11 +69,11 @@ void setup() {
     pinMode(v2, OUTPUT);
     pinMode(v3, OUTPUT);
     pinMode(v4, OUTPUT);
-    pinMode(coil, OUTPUT);
+    pinMode(s1, OUTPUT);
 
   // Set pressure transducer pins as inputs
     pinMode(OPD02, INPUT);
-    pinMode(pt2, INPUT);
+    pinMode(FPD02, INPUT);
     pinMode(OPD01, INPUT);
     pinMode(FPD01, INPUT);
     pinMode(EPD01, INPUT);
@@ -101,17 +104,22 @@ void setup() {
 
    // Calibrate current-based sensors (pt1, pt2, pt4)
     for (int i = 0; i < 100; i++) {
-        float d3 = analogRead(EPD01);
+        float d4 = analogRead(EPD01);
+        float d5 = analogRead(FPD02);
         float Vread4 = d4 * (5.0 / 1024.0);
+        float Vread5 = d5 * (5.0 / 1024.0);
         float pressure4 = (Pmax1k * (Vread4 - (I0 * R))) / (R * (Imax - I0));
+        float pressure5 = (Pmax1k * (Vread5 - (I0 * R))) / (R * (Imax - I0));
         sum4 += pressure4;
+        sum5 += pressure5;
     }
 
     offset4 = 14.7 - (sum4 / 100);
+    offset5 = 14.7 - (sum5 / 100);
 
    //This probably should be changed to 115200 but then the pi
    //should also be changed
-    Serial.begin(115200);
+    Serial.begin(9600);
 
     scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
     // Tare to zero the scale (remove any load)
@@ -120,6 +128,10 @@ void setup() {
     // Set your own calibration factor here
     // current_factor * (actual weight / a bunch of factors)
     scale.set_scale(2280.0*(4980/1800)/5*.97);
+
+    // EMatch
+    pinMode(EMATCH, OUTPUT);
+    digitalWrite(EMATCH, LOW);
 
 }
 
@@ -131,18 +143,18 @@ void loop() {
   {
         //reads 1 character from pi
         char c = Serial.read();
-        delay(0.1); // slight pause for command stability
+        delay(1); // slight pause for command stability
         //Serial.print('Arduino recieved command'); // echo received command
 
         // Manual valve controls via serial commands
-        if (c == '1') digitalWrite(v1, HIGH);
-        if (c == '!') digitalWrite(v1, LOW);
-        if (c == '2') digitalWrite(v2, HIGH);
-        if (c == '@') digitalWrite(v2, LOW);
-        if (c == '3') digitalWrite(v3, HIGH);
-        if (c == '#') digitalWrite(v3, LOW);
-        if (c == '4') digitalWrite(v4, HIGH);
-        if (c == '$') digitalWrite(v4, LOW);
+        if (c == '1') digitalWriteFast(v1, HIGH);
+        if (c == '!') digitalWriteFast(v1, LOW);
+        if (c == '2') digitalWriteFast(v2, HIGH);
+        if (c == '@') digitalWriteFast(v2, LOW);
+        if (c == '3') digitalWriteFast(v3, HIGH);
+        if (c == '#') digitalWriteFast(v3, LOW);
+        if (c == '4') digitalWriteFast(v4, HIGH);
+        if (c == '$') digitalWriteFast(v4, LOW);
 
         if(c == '&') {
             weight = ReadLoadCell();
@@ -157,9 +169,9 @@ void loop() {
             while (micros() - startMicros <= 300000) {  // 300 ms = 300,000 us
                 unsigned long cycleStart = micros();
 
-                digitalWrite(coil, HIGH);
+                digitalWriteFast(s1, HIGH);
                 delayMicroseconds(15000);  // ON for 15 ms
-                digitalWrite(coil, LOW);
+                digitalWriteFast(s1, LOW);
                 delayMicroseconds(1667);   // OFF for ~1.667 ms
 
                 count++;
@@ -189,6 +201,20 @@ void loop() {
             float pressure = ReadFPD01();
             Serial.println(pressure);
         }
+        if (c == 'A'){
+            float pressure = ReadFPD02();
+            Serial.println(pressure);
+        }
+        if (c == 'B') {
+            spark_open();
+            delay(300);  
+            spark_close();
+        }
+        if (c == 'D'){
+            digitalWrite(EMATCH, HIGH); // turns on MOSFET and fires match
+            delay(500); // 1 second fire
+            digitalWrite(EMATCH, LOW);
+        }
    }
 
    
@@ -196,53 +222,11 @@ void loop() {
 
 // ------------------- TEST SEQUENCES -------------------
 
-// Sequence of valve/pressure actions at specific times
-void dry_test() {
-    unsigned long startTime = millis();
-    while (!did30_5s) {
-        unsigned long currentTime = millis();
-        float elapsedSeconds = (currentTime - startTime) / 1000.0;
-
-        if (!did0s && elapsedSeconds >= 0) {
-            // Start_Count(); // Placeholder
-            did0s = true;
-        }
-
-        if (!did10s && elapsedSeconds >= 10.0) {
-            ReadOPD01();
-            ReadOPD02();
-            ReadFPD01();
-            ReadEPD01();
-            FV_02_CLOSE();
-            did10s = true;
-        }
-
-        if (!did15s && elapsedSeconds >= 15.0) {
-            NV_02_OPEN();
-            did15s = true;
-        }
-
-        if (!did29_95s && elapsedSeconds >= 29.95) {
-            OV_03_OPEN();
-            did29_95s = true;
-        }
-
-        if (!did30s && elapsedSeconds >= 30.0) {
-            FV_03_OPEN();
-            did30s = true;
-        }
-
-        if (!did30_5s && elapsedSeconds >= 30.5) {
-            BLP_Abort(); // Safety or abort shutdown
-            did30_5s = true;
-        }
-    }
-}
 
 // Load Cell Function
 float ReadLoadCell() {
     weight = scale.get_units(1); // Read 1 sample
-    return weight;
+    return (weight + 50)/454;
 }
 
 
@@ -254,7 +238,7 @@ float ReadOPD02() {
     for (int i = 0; i < pres_samples; i++) {
         // 5 V / 1024 bits
         float Vread = analogRead(OPD02) * (5.0 / 1024.0);
-        float pressure = (Pmax1k * (Vread - (I0 * R))) / (R * (Imax - I0)) + offset2;
+        float pressure = (Pmax1k * (Vread - (I0 * R))) / (R * (Imax - I0)) + 7.7;
         pres_sum2 += pressure;
     }
     return pres_sum2 / pres_samples;
@@ -267,7 +251,7 @@ float ReadOPD01() {
     for (int i = 0; i < pres_samples; i++) {
         // 5 V / 1024 bits
         float Vread = analogRead(OPD01) * (5.0 / 1024.0);
-        float pressure = (Pmax1k * (Vread - (I0 * R))) / (R * (Imax - I0)) + offset1;
+        float pressure = (Pmax1k * (Vread - (I0 * R))) / (R * (Imax - I0)) + 9.2;
         pres_sum1 += pressure;
     }
     return pres_sum1 / pres_samples;
@@ -280,7 +264,7 @@ float ReadFPD01() {
     for (int i = 0; i < pres_samples; i++) {
         // 5 V / 1024 bits
         float Vread = analogRead(FPD01) * (5.0 / 1024.0);
-        float pressure = (Pmax1k * (Vread - (I0 * R))) / (R * (Imax - I0)) + offset3;
+        float pressure = (Pmax1k * (Vread - (I0 * R))) / (R * (Imax - I0)) + 9.7;
         pres_sum3 += pressure;
     }
     return pres_sum3 / pres_samples;
@@ -292,27 +276,47 @@ float ReadEPD01() {
     for (int i = 0; i < pres_samples; i++) {
         // 5 V / 1024 bits
         float Vread = analogRead(EPD01) * (5.0 / 1024.0);
-        float pressure = Pmax * ((Vread - V0) / (Vmax - V0)) + offset4;
+        float pressure = Pmax * ((Vread - V0) / (Vmax - V0));
         pres_sum4 += pressure;
     }
     return pres_sum4 / pres_samples;
 }
 
+float ReadFPD02() {
+    pres_sum5 = 0;
+    for (int i = 0; i < pres_samples; i++) {
+        // 5 V / 1024 bits
+        float Vread = analogRead(FPD02) * (5.0 / 1024.0);
+        float pressure = Pmax * ((Vread - V0) / (Vmax - V0));
+        pres_sum5 += pressure;
+    }
+    return pres_sum5 / pres_samples;
+}
+
+
+
 // ------------------- VALVE CONTROL -------------------
 
-void OV_03_OPEN()  { digitalWrite(v3, HIGH); }
-void FV_03_OPEN()  { digitalWrite(v2, HIGH); }
-void NV_02_OPEN()  { digitalWrite(v4, HIGH); }
-void FV_02_OPEN()  { digitalWrite(v1, HIGH); }
-void FV_02_CLOSE() { digitalWrite(v1, LOW); }
-void OV_03_CLOSE() { digitalWrite(v3, LOW); }
-void FV_03_CLOSE() { digitalWrite(v2, LOW); }
-void NV_02_CLOSE() { digitalWrite(v4, LOW); }
+void OV_03_OPEN()  { digitalWriteFast(v3, HIGH); }
+void FV_03_OPEN()  { digitalWriteFast(v2, HIGH); }
+void NV_02_OPEN()  { digitalWriteFast(v4, HIGH); }
+void FV_02_OPEN()  { digitalWriteFast(v1, HIGH); }
+void FV_02_CLOSE() { digitalWriteFast(v1, LOW); }
+void OV_03_CLOSE() { digitalWriteFast(v3, LOW); }
+void FV_03_CLOSE() { digitalWriteFast(v2, LOW); }
+void NV_02_CLOSE() { digitalWriteFast(v4, LOW); }
+
+// ------------------- SPARK -------------------
+void spark_open() { digitalWriteFast(s1, HIGH); }
+void spark_close() { digitalWriteFast(s1, LOW); }
 
 // ------------------- ABORT SEQUENCE -------------------
 void BLP_Abort() {
     OV_03_CLOSE();
+    delay(1);
     FV_03_CLOSE();
+    delay(1);
     FV_02_OPEN();  // Unusual: opens instead of closing? Confirm logic
+    delay(1);
     NV_02_CLOSE();
 }
