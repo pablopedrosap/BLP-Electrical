@@ -1,0 +1,10 @@
+Time,Function,Action,test_duration,spark_time
+0,Start_Count,,0.5,0
+0.2,Read_OPD_02,READ,,
+0.4,Read_FPD_02,READ,,
+0.6,Read_EPD_01,READ,,
+1,NV_02,CLOSE,,
+2,FV_02,OPEN,,
+2,FV_03,CLOSE,,
+9.95,OV_03,OPEN,,
+10.5,BLP_Abort,START,,
