@@ -63,6 +63,9 @@ bool did30_5s = false;
 bool did10s = false;
 bool did15s = false;
 
+bool didSpark = false;
+
+
 void setup() {
   // Set valve and coil pins as outputs
     pinMode(v1, OUTPUT);
@@ -205,9 +208,14 @@ void loop() {
             float pressure = ReadFPD02();
             Serial.println(pressure);
         }
-        if (c == 'B') {
-            spark_open();
-            delay(300);  
+        if (c == 'B' && !didSpark) {
+            didSpark = true;
+            for(int i=0; i<16; i++){
+                spark_open();
+                delayMicroseconds(9375);  
+                spark_close();
+                delayMicroseconds(9375);  
+            }
             spark_close();
         }
         if (c == 'D'){
